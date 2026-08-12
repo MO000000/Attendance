@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>تأكيد الحضور والانصراف — المجموعة الأولى (1-23)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg: #12161d;
+    --card: #1b212b;
+    --card-border: #2a3240;
+    --text: #eef0f2;
+    --muted: #8b93a3;
+    --amber: #d99a3f;
+    --green: #5fb489;
+    --red: #d9634f;
+    --green-soft: rgba(95,180,137,0.12);
+    --red-soft: rgba(217,99,79,0.12);
+    --amber-soft: rgba(217,154,63,0.12);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0; background:transparent; color:var(--text); font-family:'Cairo',sans-serif;}
+  .app{max-width:640px; margin:0 auto; padding:16px 14px 60px;}
+
+  /* header */
+  .top{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;}
+  .brand{display:flex; flex-direction:column; gap:2px;}
+  .brand .eyebrow{font-size:11px; letter-spacing:1px; color:var(--muted); font-weight:600;}
+  .brand h1{font-size:20px; margin:0; font-weight:800;}
+  .clock-box{text-align:left; background:var(--card); border:1px solid var(--card-border); border-radius:10px; padding:8px 12px; min-width:118px;}
+  .clock{font-family:'Roboto Mono',monospace; font-size:20px; font-weight:700; letter-spacing:1px;}
+  .date{font-size:11px; color:var(--muted); margin-top:2px;}
+
+  /* stats */
+  .stats{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;}
+  .stat{background:var(--card); border:1px solid var(--card-border); border-radius:10px; padding:10px; text-align:center;}
+  .stat .num{font-family:'Roboto Mono',monospace; font-size:22px; font-weight:700;}
+  .stat .lbl{font-size:11px; color:var(--muted); margin-top:2px;}
+  .stat.in .num{color:var(--green);}
+  .stat.pending .num{color:var(--amber);}
+  .stat.late .num{color:var(--red);}
+
+  /* search + admin toggle */
+  .controls{display:flex; gap:8px; margin-bottom:12px;}
+  input[type=text], textarea{
+    background:var(--card); border:1px solid var(--card-border); color:var(--text);
+    border-radius:10px; padding:10px 12px; font-family:'Cairo',sans-serif; font-size:14px; width:100%;
+  }
+  input[type=text]:focus, textarea:focus{outline:none; border-color:var(--amber);}
+  .icon-btn{background:var(--card); border:1px solid var(--card-border); color:var(--text); border-radius:10px; padding:0 14px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  .icon-btn:active{transform:scale(0.97);}
+
+  .admin-panel{background:var(--card); border:1px solid var(--card-border); border-radius:12px; padding:14px; margin-bottom:14px; display:none;}
+  .admin-panel.open{display:block;}
+  .admin-panel h3{margin:0 0 8px; font-size:14px;}
+  .admin-panel p.hint{font-size:11px; color:var(--muted); margin:6px 0 10px;}
+  .admin-row{display:flex; gap:8px; margin-top:8px;}
+  .primary-btn{background:var(--amber); color:#1b140a; border:none; border-radius:9px; padding:10px 16px; font-weight:700; font-size:13px; cursor:pointer;}
+  .primary-btn:active{transform:scale(0.97);}
+  .cutoff-row{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px;}
+  .cutoff-row input[type=time]{background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:6px 8px; font-family:'Roboto Mono',monospace;}
+
+  /* employee list */
+  .list{display:flex; flex-direction:column; gap:10px;}
+  .card{
+    position:relative; background:var(--card); border:1px solid var(--card-border); border-radius:12px;
+    padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    overflow:hidden;
+  }
+  .card::before{
+    content:""; position:absolute; top:0; bottom:0; right:0; width:10px;
+    background-image: radial-gradient(circle at 5px 10px, var(--bg) 3px, transparent 3.5px);
+    background-size: 10px 16px; opacity:0.9;
+  }
+  .card.late{border-color:var(--red); box-shadow:0 0 0 1px var(--red-soft) inset;}
+  .name-block{display:flex; flex-direction:column; gap:2px; padding-right:6px;}
+  .name{font-weight:700; font-size:15px;}
+  .late-tag{font-size:10px; color:var(--red); font-weight:700;}
+  .actions{display:flex; gap:6px; flex-shrink:0;}
+  .stamp{
+    font-family:'Roboto Mono',monospace; font-size:11px; font-weight:700; border-radius:8px;
+    padding:7px 10px; text-align:center; min-width:78px; border:2px dashed;
+    animation: stampIn 0.28s ease-out;
+  }
+  .stamp.in-stamp{color:var(--green); border-color:var(--green); background:var(--green-soft);}
+  .stamp.out-stamp{color:var(--amber); border-color:var(--amber); background:var(--amber-soft);}
+  @keyframes stampIn{
+    0%{ transform: scale(1.6) rotate(-8deg); opacity:0; }
+    60%{ transform: scale(0.95) rotate(2deg); opacity:1; }
+    100%{ transform: scale(1) rotate(-3deg); opacity:1; }
+  }
+  .action-btn{
+    border:none; border-radius:8px; padding:9px 12px; font-size:12px; font-weight:700; cursor:pointer;
+    font-family:'Cairo',sans-serif; min-width:78px;
+  }
+  .action-btn.in-btn{background:var(--green); color:#0d2018;}
+  .action-btn.out-btn{background:var(--amber); color:#241a08;}
+  .action-btn:disabled{opacity:0.35; cursor:default;}
+  .action-btn:active{transform:scale(0.96);}
+
+  .empty{text-align:center; color:var(--muted); padding:40px 20px; font-size:13px; line-height:1.8;}
+  .loading{text-align:center; color:var(--muted); padding:30px; font-size:13px;}
+  .shared-note{font-size:11px; color:var(--muted); text-align:center; margin-top:18px; line-height:1.7;}
+
+  /* confirm modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(8,10,14,0.65); display:flex; align-items:center; justify-content:center;
+    z-index:50; padding:20px; animation: fadeIn 0.15s ease-out;
+  }
+  @keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
+  .modal{
+    background:var(--card); border:1px solid var(--card-border); border-radius:14px; padding:22px 20px;
+    max-width:320px; width:100%; text-align:center; animation: modalPop 0.18s ease-out;
+  }
+  @keyframes modalPop{ from{ transform: scale(0.92); opacity:0; } to{ transform: scale(1); opacity:1; } }
+  .modal .modal-icon{font-size:28px; margin-bottom:8px;}
+  .modal h3{margin:0 0 6px; font-size:16px;}
+  .modal p{margin:0 0 18px; font-size:13px; color:var(--muted); line-height:1.7;}
+  .modal-actions{display:flex; gap:8px;}
+  .modal-actions button{flex:1; border:none; border-radius:9px; padding:11px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Cairo',sans-serif;}
+  .modal-actions .confirm-btn{background:var(--amber); color:#241a08;}
+  .modal-actions .cancel-btn{background:transparent; border:1px solid var(--card-border); color:var(--text);}
+  .modal-actions button:active{transform:scale(0.96);}
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--green); color:#0d2018;
+    padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; z-index:60; box-shadow:0 4px 16px rgba(0,0,0,0.3);
+    animation: toastIn 0.2s ease-out; max-width:88%; text-align:center;
+  }
+  @keyframes toastIn{ from{ opacity:0; transform:translateX(-50%) translateY(10px);} to{ opacity:1; transform:translateX(-50%) translateY(0);} }
+  .export-row{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; flex-wrap:wrap;}
+  .export-row input[type=month]{background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:6px 8px; font-family:'Roboto Mono',monospace;}
+  .remind-btn{background:transparent; border:1px solid var(--amber); color:var(--amber); border-radius:9px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Cairo',sans-serif;}
+  .remind-btn:active{transform:scale(0.97);}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="loading">جارِ التحميل...</div>
+</div>
+
+<script>
+const STORAGE_EMPLOYEES = 'g1_attendance_employees';
+const STORAGE_CUTOFF = 'g1_attendance_cutoff';
+const STORAGE_PINS = 'g1_attendance_pins';
+
+// ============================================================
+// REMOTE STORAGE — بديل عن window.storage، بيتكلم مباشرة مع
+// Firebase Realtime Database عن طريق REST API (fetch عادي، بدون أي
+// مكتبة خارجية أو <script> إضافي — لتجنّب مشاكل الـ CSP)
+// ============================================================
+const DATABASE_URL = "https://attendance-9a21c-default-rtdb.europe-west1.firebasedatabase.app";
+
+const remoteStorage = {
+  async get(key, shared){
+    const res = await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(key)}.json`);
+    const data = await res.json();
+    if(data === null || data === undefined) return null;
+    return { key, value: data, shared: true };
+  },
+  async set(key, value, shared){
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(key)}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value)
+    });
+    return { key, value, shared: true };
+  },
+  async delete(key, shared){
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(key)}.json`, { method: 'DELETE' });
+    return { key, deleted: true, shared: true };
+  },
+  async list(prefix, shared){
+    const res = await fetch(`${DATABASE_URL}/storage.json?shallow=true`);
+    const data = await res.json();
+    const all = data || {};
+    const keys = Object.keys(all).filter(k => k.startsWith(prefix||''));
+    return { keys, prefix, shared: true };
+  }
+};
+
+const ADMIN_NAMES = [
+  "محمد أحمد سعيد محمد",
+  "نادر جمال عبد المقصود زيدان"
+];
+
+const DEFAULT_EMPLOYEES = [
+  "نادر جمال عبد المقصود زيدان",
+  "محمد أحمد سعيد محمد",
+  "محمد أسامة عدلى على",
+  "عبد الرحمن عصام فتحى خليل",
+  "محمد نصر الدين أنور رضوان",
+  "شادي جودة ابراهيم خليل",
+  "أحمد صلاح الدين فتحي رضوان",
+  "محمود طارق مختار شبانة",
+  "أحمد سعيد أبو بكر عبد العزيز",
+  "محمد عبد الحميد زكريا الرفاعى",
+  "محمد عبد الهادى عبد الجليل السعيد",
+  "محمود محمد مصطفى الشحات",
+  "عبدالرؤوف حامد الوحش محمد",
+  "اسلام فوزى عطيه شمه",
+  "شهاب صبحي محمد بسطويسي مصباح",
+  "مصطفى حسين مصطفى جابر خليل",
+  "أحمد صبرى إبراهيم حسانين",
+  "محمد سعد محمد أحمد",
+  "محمد عبدالرحمن ابوالمجد مرسى الفخراني",
+  "محمود توفيق أحمد الغواب",
+  "منیر فهمي منیر عبده محمود حماد",
+  "محمد علي عبدالحليم علي",
+  "زياد امير عبد الدايم احمد عبد الدايم"
+];
+
+let employees = [];
+let cutoffTime = '09:30';
+let attendance = {};
+let employeePins = {};
+let adminOpen = false;
+let searchQuery = '';
+let confirmingName = null;
+let confirmingInName = null;
+let confirmErrorOut = null;
+let confirmErrorIn = null;
+let viewedDate = todayKey();
+let toastMessage = null;
+let exportMonthValue = todayKey().slice(0,7);
+let exporting = false;
+
+// admin session (in-memory only — resets if the page is reloaded)
+let adminAuthenticated = false;
+let adminName = null;
+let showAdminLogin = false;
+let adminLoginError = null;
+
+// self-service PIN change (open to everyone)
+let showChangePin = false;
+let changePinError = null;
+
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function attendanceKey(){ return 'g1_attendance_day_' + viewedDate; }
+function isViewingToday(){ return viewedDate === todayKey(); }
+
+function fmtDateArabic(){
+  const [y,m,d] = viewedDate.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  return dt.toLocaleDateString('ar-EG', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+function fmtTime(d){
+  return d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+}
+
+function showToast(msg){
+  toastMessage = msg;
+  render();
+  setTimeout(()=>{ toastMessage = null; render(); }, 2600);
+}
+
+function copyToClipboard(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      showToast('تم نسخ الرسالة، الصقها في الواتساب ✅');
+    }).catch(()=>{ fallbackCopy(text); });
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text){
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('تم نسخ الرسالة، الصقها في الواتساب ✅');
+  }catch(e){
+    showToast('مقدرش أنسخ تلقائيًا، انسخ يدويًا من الرسالة');
+  }
+}
+
+function copyReminderMessage(){
+  const pendingNames = employees.filter(n => !(attendance[n] && attendance[n].in));
+  if(pendingNames.length === 0){
+    showToast('الكل بصم، مفيش حد لسه محتاج تذكير 🎉');
+    return;
+  }
+  const list = pendingNames.map(n => '- ' + n).join('\n');
+  const msg = `🔔 تذكير بالبصمة\nالمهندسين التاليين لسه ما بصموش حضور النهاردة (${fmtDateArabic()}):\n${list}\n\nمن فضلكم اتوجهوا للبصمة والتأكيد في أقرب وقت 🙏`;
+  copyToClipboard(msg);
+}
+
+function monthLabelArabic(monthStr){
+  const [y,m] = monthStr.split('-').map(Number);
+  const dt = new Date(y, m-1, 1);
+  return dt.toLocaleDateString('ar-EG', { year:'numeric', month:'long' });
+}
+
+function updateExportMonth(val){
+  exportMonthValue = val;
+  render();
+}
+
+async function exportMonth(){
+  if(exporting) return;
+  exporting = true;
+  render();
+  try{
+    const monthStr = exportMonthValue;
+    const listResult = await remoteStorage.list('g1_attendance_day_' + monthStr, true);
+    const keys = (listResult && listResult.keys) ? listResult.keys.filter(k => k.startsWith('g1_attendance_day_' + monthStr)) : [];
+    if(keys.length === 0){
+      showToast('مفيش بيانات مسجلة للشهر ده');
+      exporting = false;
+      render();
+      return;
+    }
+    keys.sort();
+    const rows = [['التاريخ', 'الاسم', 'وقت الحضور', 'وقت الانصراف', 'الحالة']];
+    for(const key of keys){
+      const dateStr = key.replace('g1_attendance_day_', '');
+      let dayData = {};
+      try{
+        const res = await remoteStorage.get(key, true);
+        dayData = res ? JSON.parse(res.value) : {};
+      }catch(e){ dayData = {}; }
+      const sortedNames = [...employees].sort((a,b)=>a.localeCompare(b,'ar'));
+      for(const name of sortedNames){
+        const rec = dayData[name] || {};
+        const inTime = rec.in ? fmtTime(new Date(rec.in)) : '';
+        const outTime = rec.out ? fmtTime(new Date(rec.out)) : '';
+        let status = 'غائب';
+        if(rec.in){
+          const [ch, cm] = cutoffTime.split(':').map(Number);
+          const inDate = new Date(rec.in);
+          const cutoffOnThatDay = new Date(inDate); cutoffOnThatDay.setHours(ch, cm, 0, 0);
+          status = inDate > cutoffOnThatDay ? 'متأخر' : 'حضر في الميعاد';
+        }
+        rows.push([dateStr, name, inTime, outTime, status]);
+      }
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:12},{wch:22},{wch:14},{wch:14},{wch:16}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'الحضور');
+    XLSX.writeFile(wb, `سجل-الحضور-${monthStr}.xlsx`);
+    showToast('تم تحميل ملف Excel ✅');
+  }catch(e){
+    console.error('export failed', e);
+    showToast('حصل خطأ أثناء التصدير، جرب تاني');
+  }
+  exporting = false;
+  render();
+}
+
+
+async function loadAttendanceForCurrentView(){
+  try{
+    const att = await remoteStorage.get(attendanceKey(), true);
+    attendance = att ? JSON.parse(att.value) : {};
+  }catch(e){ attendance = {}; }
+  render();
+}
+
+async function switchDate(dateStr){
+  viewedDate = dateStr;
+  await loadAttendanceForCurrentView();
+}
+
+async function backToToday(){
+  viewedDate = todayKey();
+  await loadAttendanceForCurrentView();
+}
+
+async function loadAll(){
+  try{
+    const emp = await remoteStorage.get(STORAGE_EMPLOYEES, true);
+    employees = emp ? JSON.parse(emp.value) : [];
+  }catch(e){ employees = []; }
+
+  // first run on this shared workspace: seed with the mechanical-engineering roster
+  if(employees.length === 0 && DEFAULT_EMPLOYEES.length > 0){
+    employees = [...DEFAULT_EMPLOYEES].sort((a,b)=>a.localeCompare(b,'ar'));
+    await saveEmployees();
+  }
+
+  try{
+    const cut = await remoteStorage.get(STORAGE_CUTOFF, true);
+    cutoffTime = cut ? JSON.parse(cut.value) : '09:30';
+  }catch(e){ cutoffTime = '09:30'; }
+
+  try{
+    const pins = await remoteStorage.get(STORAGE_PINS, true);
+    employeePins = pins ? JSON.parse(pins.value) : {};
+  }catch(e){ employeePins = {}; }
+
+  try{
+    const att = await remoteStorage.get(attendanceKey(), true);
+    attendance = att ? JSON.parse(att.value) : {};
+  }catch(e){ attendance = {}; }
+
+  render();
+}
+
+async function saveEmployees(){
+  try{ await remoteStorage.set(STORAGE_EMPLOYEES, JSON.stringify(employees), true); }
+  catch(e){ console.error('save employees failed', e); }
+}
+async function saveCutoff(){
+  try{ await remoteStorage.set(STORAGE_CUTOFF, JSON.stringify(cutoffTime), true); }
+  catch(e){ console.error('save cutoff failed', e); }
+}
+async function savePins(){
+  try{ await remoteStorage.set(STORAGE_PINS, JSON.stringify(employeePins), true); }
+  catch(e){ console.error('save pins failed', e); }
+}
+async function saveAttendance(){
+  try{ await remoteStorage.set(attendanceKey(), JSON.stringify(attendance), true); }
+  catch(e){ console.error('save attendance failed', e); }
+}
+
+function isLate(name){
+  if(!isViewingToday()) return false;
+  const rec = attendance[name];
+  if(rec && rec.in) return false;
+  const now = new Date();
+  const [h,m] = cutoffTime.split(':').map(Number);
+  const cutoff = new Date(); cutoff.setHours(h,m,0,0);
+  return now > cutoff;
+}
+function isAbsentPastDay(name){
+  if(isViewingToday()) return false;
+  const rec = attendance[name];
+  return !(rec && rec.in);
+}
+
+async function markIn(name){
+  const now = new Date();
+  attendance[name] = attendance[name] || {};
+  attendance[name].in = now.toISOString();
+  render();
+  await saveAttendance();
+}
+
+function askConfirmIn(name){
+  confirmingInName = name;
+  confirmErrorIn = null;
+  render();
+  setTimeout(()=>{ const el=document.getElementById('pinInputIn'); if(el) el.focus(); }, 50);
+}
+function cancelConfirmIn(){
+  confirmingInName = null;
+  confirmErrorIn = null;
+  render();
+}
+async function proceedConfirmIn(){
+  const name = confirmingInName;
+  const el = document.getElementById('pinInputIn');
+  const pin = el ? el.value.trim() : '';
+  if(!/^\d{4}$/.test(pin)){
+    confirmErrorIn = 'اكتب رقم سري من 4 أرقام';
+    render();
+    setTimeout(()=>{ const e2=document.getElementById('pinInputIn'); if(e2) e2.focus(); }, 50);
+    return;
+  }
+  if(employeePins[name]){
+    if(employeePins[name] !== pin){
+      confirmErrorIn = 'الرقم السري غلط، حاول تاني';
+      render();
+      setTimeout(()=>{ const e2=document.getElementById('pinInputIn'); if(e2) e2.focus(); }, 50);
+      return;
+    }
+  } else {
+    employeePins[name] = pin;
+    await savePins();
+  }
+  confirmingInName = null;
+  confirmErrorIn = null;
+  await markIn(name);
+}
+async function markOut(name){
+  const now = new Date();
+  attendance[name] = attendance[name] || {};
+  attendance[name].out = now.toISOString();
+  render();
+  await saveAttendance();
+}
+
+function askConfirmOut(name){
+  confirmingName = name;
+  confirmErrorOut = null;
+  render();
+  setTimeout(()=>{ const el=document.getElementById('pinInputOut'); if(el) el.focus(); }, 50);
+}
+function cancelConfirmOut(){
+  confirmingName = null;
+  confirmErrorOut = null;
+  render();
+}
+async function proceedConfirmOut(){
+  const name = confirmingName;
+  const el = document.getElementById('pinInputOut');
+  const pin = el ? el.value.trim() : '';
+  if(!/^\d{4}$/.test(pin)){
+    confirmErrorOut = 'اكتب رقم سري من 4 أرقام';
+    render();
+    setTimeout(()=>{ const e2=document.getElementById('pinInputOut'); if(e2) e2.focus(); }, 50);
+    return;
+  }
+  if(employeePins[name]){
+    if(employeePins[name] !== pin){
+      confirmErrorOut = 'الرقم السري غلط، حاول تاني';
+      render();
+      setTimeout(()=>{ const e2=document.getElementById('pinInputOut'); if(e2) e2.focus(); }, 50);
+      return;
+    }
+  } else {
+    employeePins[name] = pin;
+    await savePins();
+  }
+  confirmingName = null;
+  confirmErrorOut = null;
+  await markOut(name);
+}
+
+async function addEmployees(){
+  const ta = document.getElementById('bulkNames');
+  const raw = ta.value;
+  const names = raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  let added = 0;
+  names.forEach(n=>{
+    if(!employees.includes(n)){ employees.push(n); added++; }
+  });
+  employees.sort((a,b)=>a.localeCompare(b,'ar'));
+  ta.value='';
+  render();
+  await saveEmployees();
+}
+
+async function removeEmployee(name){
+  employees = employees.filter(e=>e!==name);
+  delete attendance[name];
+  delete employeePins[name];
+  render();
+  await saveEmployees();
+  await saveAttendance();
+  await savePins();
+}
+
+async function resetPin(name){
+  if(!confirm(`متأكد إنك عايز تصفّر الرقم السري بتاع ${name}؟ هيحتاج يحدد رقم جديد أول ما يبصم.`)) return;
+  delete employeePins[name];
+  render();
+  await savePins();
+}
+
+async function updateCutoff(val){
+  cutoffTime = val;
+  render();
+  await saveCutoff();
+}
+
+function toggleAdmin(){
+  adminOpen = !adminOpen;
+  render();
+}
+
+function adminButtonClick(){
+  if(adminAuthenticated){
+    toggleAdmin();
+  } else {
+    openAdminLogin();
+  }
+}
+
+function openAdminLogin(){
+  showAdminLogin = true;
+  adminLoginError = null;
+  render();
+  setTimeout(()=>{ const el=document.getElementById('adminLoginPin'); if(el) el.focus(); }, 50);
+}
+function closeAdminLogin(){
+  showAdminLogin = false;
+  adminLoginError = null;
+  render();
+}
+async function submitAdminLogin(){
+  const nameSel = document.getElementById('adminLoginName').value;
+  const pinEl = document.getElementById('adminLoginPin');
+  const pin = pinEl ? pinEl.value.trim() : '';
+  if(!/^\d{4}$/.test(pin)){
+    adminLoginError = 'اكتب رقم سري من 4 أرقام';
+    render();
+    return;
+  }
+  if(employeePins[nameSel]){
+    if(employeePins[nameSel] !== pin){
+      adminLoginError = 'الرقم السري غلط';
+      render();
+      return;
+    }
+  } else {
+    // this admin never confirmed attendance before — set this as their PIN now
+    employeePins[nameSel] = pin;
+    await savePins();
+  }
+  adminAuthenticated = true;
+  adminName = nameSel;
+  showAdminLogin = false;
+  adminLoginError = null;
+  adminOpen = true;
+  render();
+  showToast('تم تسجيل الدخول كأدمن: ' + nameSel);
+}
+function adminLogout(){
+  adminAuthenticated = false;
+  adminName = null;
+  adminOpen = false;
+  render();
+  showToast('تم تسجيل الخروج من وضع الأدمن');
+}
+
+function openChangePin(){
+  showChangePin = true;
+  changePinError = null;
+  render();
+}
+function closeChangePin(){
+  showChangePin = false;
+  changePinError = null;
+  render();
+}
+async function submitChangePin(){
+  const nameSel = document.getElementById('changePinName').value;
+  const hasPin = !!employeePins[nameSel];
+  const oldEl = document.getElementById('changePinOld');
+  const newEl = document.getElementById('changePinNew');
+  const new2El = document.getElementById('changePinNew2');
+  const oldPin = oldEl ? oldEl.value.trim() : '';
+  const newPin = newEl ? newEl.value.trim() : '';
+  const newPin2 = new2El ? new2El.value.trim() : '';
+
+  if(hasPin && employeePins[nameSel] !== oldPin){
+    changePinError = 'الرقم السري القديم غلط';
+    render();
+    return;
+  }
+  if(!/^\d{4}$/.test(newPin)){
+    changePinError = 'الرقم الجديد لازم يكون 4 أرقام';
+    render();
+    return;
+  }
+  if(newPin !== newPin2){
+    changePinError = 'الرقمين الجديدين مش متطابقين';
+    render();
+    return;
+  }
+  employeePins[nameSel] = newPin;
+  await savePins();
+  showChangePin = false;
+  changePinError = null;
+  render();
+  showToast('تم تغيير الرقم السري بنجاح ✅');
+}
+
+function onSearch(val){
+  searchQuery = val;
+  render();
+}
+
+function render(){
+  const app = document.getElementById('app');
+
+  // preserve focus & cursor position across re-renders (innerHTML rebuild would otherwise steal focus)
+  const active = document.activeElement;
+  let focusId = null, selStart = null, selEnd = null;
+  if(active && active.id && app.contains(active)){
+    focusId = active.id;
+    if(typeof active.selectionStart === 'number'){
+      selStart = active.selectionStart;
+      selEnd = active.selectionEnd;
+    }
+  }
+
+  const inCount = employees.filter(n=>attendance[n] && attendance[n].in).length;
+  const lateCount = employees.filter(n=>isLate(n)).length;
+  const pendingCount = employees.length - inCount;
+
+  const filtered = employees.filter(n => n.startsWith(searchQuery));
+  // sort: late first, then not-in, then in
+  filtered.sort((a,b)=>{
+    const score = n => {
+      if(isLate(n) || isAbsentPastDay(n)) return 0;
+      if(!(attendance[n] && attendance[n].in)) return 1;
+      return 2;
+    };
+    const sa = score(a), sb = score(b);
+    if(sa!==sb) return sa-sb;
+    return a.localeCompare(b,'ar');
+  });
+
+  app.innerHTML = `
+    <div class="top">
+      <div class="brand">
+        <div class="eyebrow">تأكيد الحضور والانصراف — المجموعة الأولى (1-23)</div>
+        <h1>${isViewingToday() ? 'سجلّ اليوم' : 'سجلّ يوم سابق'}</h1>
+      </div>
+      <div class="clock-box">
+        <div class="clock" id="liveClock">--:--:--</div>
+        <div class="date">${fmtDateArabic()}</div>
+      </div>
+    </div>
+
+    <div class="controls" style="margin-bottom:12px;">
+      <input type="date" value="${viewedDate}" max="${todayKey()}" onchange="switchDate(this.value)"
+        style="background:var(--card); border:1px solid var(--card-border); color:var(--text); border-radius:10px; padding:10px 12px; font-family:'Roboto Mono',monospace; font-size:13px; width:auto;">
+      ${!isViewingToday() ? `<button class="icon-btn" onclick="backToToday()">◀ رجوع لليوم</button>` : ''}
+    </div>
+
+    <div class="stats">
+      <div class="stat in"><div class="num">${inCount}/${employees.length}</div><div class="lbl">حضروا</div></div>
+      <div class="stat pending"><div class="num">${pendingCount}</div><div class="lbl">لسه ماحضروش</div></div>
+      <div class="stat late"><div class="num">${lateCount}</div><div class="lbl">متأخرين</div></div>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="searchInput" placeholder="ابحث عن اسم..." value="${searchQuery}" oninput="onSearch(this.value)">
+      <button class="icon-btn" onclick="openChangePin()">🔑 غيّر رقمك السري</button>
+      <button class="icon-btn" onclick="adminButtonClick()">${adminAuthenticated ? (adminOpen ? 'إغلاق ✕' : 'لوحة الأدمن ⚙') : '🔒 دخول الأدمن'}</button>
+    </div>
+
+    <div class="admin-panel ${adminOpen && adminAuthenticated ? 'open':''}">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--card-border);">
+        <span style="font-size:12px; color:var(--muted);">مسجّل دخول كـ: <b style="color:var(--text);">${adminName || ''}</b></span>
+        <button class="icon-btn" style="padding:4px 10px; font-size:11px;" onclick="adminLogout()">تسجيل خروج</button>
+      </div>
+
+      ${isViewingToday() && pendingCount > 0 ? `
+      <button class="remind-btn" style="width:100%; margin-bottom:14px;" onclick="copyReminderMessage()">
+        📋 نسخ رسالة تذكير لـ ${pendingCount} لسه ماحضروش (للواتساب)
+      </button>` : ''}
+
+      <h3>إضافة أسماء بالجملة</h3>
+      <p class="hint">الصق كل اسم في سطر لوحده، ودوس "إضافة" — الأسماء الموجودة مسبقًا هتتجاهل.</p>
+      <textarea id="bulkNames" rows="4" placeholder="أحمد محمد&#10;سارة علي&#10;..."></textarea>
+      <div class="admin-row">
+        <button class="primary-btn" onclick="addEmployees()">إضافة الأسماء</button>
+      </div>
+      <div class="cutoff-row">
+        <span>وقت آخر موعد للحضور قبل ما يتحسب "متأخر":</span>
+        <input type="time" value="${cutoffTime}" onchange="updateCutoff(this.value)">
+      </div>
+
+      <h3 style="margin-top:16px;">تصدير سجل شهر لملف Excel</h3>
+      <div class="export-row">
+        <input type="month" value="${exportMonthValue}" max="${todayKey().slice(0,7)}" onchange="updateExportMonth(this.value)">
+        <button class="primary-btn" onclick="exportMonth()" ${exporting ? 'disabled':''}>${exporting ? 'جارِ التصدير...' : 'تحميل Excel لشهر ' + monthLabelArabic(exportMonthValue)}</button>
+      </div>
+      <p class="hint">هيطلع ملف فيه كل يوم فيه بيانات في الشهر ده، بأسماء المهندسين ومواعيد الحضور والانصراف وحالة كل يوم.</p>
+      ${employees.length ? `
+      <h3 style="margin-top:16px;">الأسماء الحالية (${employees.length})</h3>
+      <div style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+        ${employees.map(n=>`
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:4px 0; border-bottom:1px solid var(--card-border);">
+            <span>${n} ${employeePins[n] ? '<span style="color:var(--green); font-size:10px;">🔒 مفعّل</span>' : '<span style="color:var(--muted); font-size:10px;">لسه مفيش رقم سري</span>'}</span>
+            <span style="display:flex; gap:6px;">
+              ${employeePins[n] ? `<button class="icon-btn" style="padding:4px 10px; font-size:11px;" onclick="resetPin('${n.replace(/'/g,"\\'")}')">تصفير الرقم السري</button>` : ''}
+              <button class="icon-btn" style="padding:4px 10px; font-size:11px;" onclick="removeEmployee('${n.replace(/'/g,"\\'")}')">حذف</button>
+            </span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+    </div>
+
+    <div class="list">
+      ${filtered.length===0 ? `
+        <div class="empty">${employees.length===0 ? 'لسه مفيش أسماء مضافة.<br>افتح "إدارة الأسماء" وضيف أسماء المهندسين.' : 'مفيش نتايج للبحث ده.'}</div>
+      ` : filtered.map(name=>{
+        const rec = attendance[name] || {};
+        const late = isLate(name);
+        const absentPast = isAbsentPastDay(name);
+        const readOnly = !isViewingToday();
+        return `
+        <div class="card ${late || absentPast ? 'late':''}">
+          <div class="name-block">
+            <div class="name">${name}</div>
+            ${late ? '<div class="late-tag">متأخر عن موعد الحضور</div>' : ''}
+            ${absentPast ? '<div class="late-tag">لم يسجل حضور هذا اليوم</div>' : ''}
+          </div>
+          <div class="actions">
+            ${rec.in
+              ? `<div class="stamp in-stamp">حضر ✓<br>${fmtTime(new Date(rec.in))}</div>`
+              : (readOnly ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>` : `<button class="action-btn in-btn" onclick="askConfirmIn('${name.replace(/'/g,"\\'")}')">تسجيل حضور</button>`)
+            }
+            ${rec.out
+              ? `<div class="stamp out-stamp">انصرف ✓<br>${fmtTime(new Date(rec.out))}</div>`
+              : (readOnly ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>` : `<button class="action-btn out-btn" onclick="askConfirmOut('${name.replace(/'/g,"\\'")}')" ${!rec.in ? 'disabled':''}>تسجيل انصراف</button>`)
+            }
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="shared-note">هذه الصفحة مشتركة بين كل من يفتح الرابط — أي تأكيد بيظهر لكل الفريق فورًا.<br>سجل كل يوم بيتحفظ لوحده ومتاح تراجعه من منتقي التاريخ فوق.</div>
+
+    ${confirmingName ? `
+    <div class="overlay" onclick="if(event.target===this) cancelConfirmOut()">
+      <div class="modal">
+        <div class="modal-icon">🕐</div>
+        <h3>تأكيد الانصراف</h3>
+        <p>هتسجل انصراف <b>${confirmingName}</b> الساعة ${fmtTime(new Date())}.<br>
+        ${employeePins[confirmingName] ? 'ادخل رقمك السري للتأكيد:' : 'أول مرة؟ حدد رقم سري من 4 أرقام هتستخدمه دايمًا:'}</p>
+        <input type="tel" inputmode="numeric" maxlength="4" id="pinInputOut" placeholder="••••"
+          style="text-align:center; letter-spacing:8px; font-family:'Roboto Mono',monospace; font-size:18px; margin-bottom:6px;"
+          onkeydown="if(event.key==='Enter') proceedConfirmOut()">
+        ${confirmErrorOut ? `<div style="color:var(--red); font-size:12px; margin-bottom:10px;">${confirmErrorOut}</div>` : '<div style="margin-bottom:16px;"></div>'}
+        <div class="modal-actions">
+          <button class="cancel-btn" onclick="cancelConfirmOut()">إلغاء</button>
+          <button class="confirm-btn" onclick="proceedConfirmOut()">تأكيد الانصراف</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${confirmingInName ? `
+    <div class="overlay" onclick="if(event.target===this) cancelConfirmIn()">
+      <div class="modal">
+        <div class="modal-icon">🕐</div>
+        <h3>تأكيد الحضور</h3>
+        <p>هتسجل حضور <b>${confirmingInName}</b> الساعة ${fmtTime(new Date())}.<br>
+        ${employeePins[confirmingInName] ? 'ادخل رقمك السري للتأكيد:' : 'أول مرة؟ حدد رقم سري من 4 أرقام هتستخدمه دايمًا:'}</p>
+        <input type="tel" inputmode="numeric" maxlength="4" id="pinInputIn" placeholder="••••"
+          style="text-align:center; letter-spacing:8px; font-family:'Roboto Mono',monospace; font-size:18px; margin-bottom:6px;"
+          onkeydown="if(event.key==='Enter') proceedConfirmIn()">
+        ${confirmErrorIn ? `<div style="color:var(--red); font-size:12px; margin-bottom:10px;">${confirmErrorIn}</div>` : '<div style="margin-bottom:16px;"></div>'}
+        <div class="modal-actions">
+          <button class="cancel-btn" onclick="cancelConfirmIn()">إلغاء</button>
+          <button class="confirm-btn" onclick="proceedConfirmIn()">تأكيد الحضور</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${showAdminLogin ? `
+    <div class="overlay" onclick="if(event.target===this) closeAdminLogin()">
+      <div class="modal">
+        <div class="modal-icon">🔒</div>
+        <h3>دخول الأدمن</h3>
+        <p>الصلاحيات دي مقصورة على عدد محدود من الأشخاص.<br>اختار اسمك وادخل رقمك السري:</p>
+        <select id="adminLoginName" style="width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px; font-family:'Cairo',sans-serif; font-size:13px; margin-bottom:10px;">
+          ${ADMIN_NAMES.map(n=>`<option value="${n}">${n}</option>`).join('')}
+        </select>
+        <input type="tel" inputmode="numeric" maxlength="4" id="adminLoginPin" placeholder="••••"
+          style="text-align:center; letter-spacing:8px; font-family:'Roboto Mono',monospace; font-size:18px; margin-bottom:6px; width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px;"
+          onkeydown="if(event.key==='Enter') submitAdminLogin()">
+        ${adminLoginError ? `<div style="color:var(--red); font-size:12px; margin-bottom:10px;">${adminLoginError}</div>` : '<div style="margin-bottom:16px;"></div>'}
+        <div class="modal-actions">
+          <button class="cancel-btn" onclick="closeAdminLogin()">إلغاء</button>
+          <button class="confirm-btn" onclick="submitAdminLogin()">دخول</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${showChangePin ? `
+    <div class="overlay" onclick="if(event.target===this) closeChangePin()">
+      <div class="modal">
+        <div class="modal-icon">🔑</div>
+        <h3>تغيير الرقم السري</h3>
+        <p>اختار اسمك، وادخل رقمك القديم (لو عندك) ثم الجديد:</p>
+        <select id="changePinName" style="width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px; font-family:'Cairo',sans-serif; font-size:13px; margin-bottom:10px;">
+          ${[...employees].sort((a,b)=>a.localeCompare(b,'ar')).map(n=>`<option value="${n}">${n}</option>`).join('')}
+        </select>
+        <input type="tel" inputmode="numeric" maxlength="4" id="changePinOld" placeholder="الرقم القديم (لو موجود)"
+          style="text-align:center; letter-spacing:4px; font-family:'Roboto Mono',monospace; font-size:15px; margin-bottom:8px; width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px;">
+        <input type="tel" inputmode="numeric" maxlength="4" id="changePinNew" placeholder="الرقم الجديد"
+          style="text-align:center; letter-spacing:4px; font-family:'Roboto Mono',monospace; font-size:15px; margin-bottom:8px; width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px;">
+        <input type="tel" inputmode="numeric" maxlength="4" id="changePinNew2" placeholder="أكّد الرقم الجديد"
+          style="text-align:center; letter-spacing:4px; font-family:'Roboto Mono',monospace; font-size:15px; margin-bottom:6px; width:100%; background:var(--bg); border:1px solid var(--card-border); color:var(--text); border-radius:8px; padding:9px;"
+          onkeydown="if(event.key==='Enter') submitChangePin()">
+        ${changePinError ? `<div style="color:var(--red); font-size:12px; margin-bottom:10px;">${changePinError}</div>` : '<div style="margin-bottom:16px;"></div>'}
+        <div class="modal-actions">
+          <button class="cancel-btn" onclick="closeChangePin()">إلغاء</button>
+          <button class="confirm-btn" onclick="submitChangePin()">حفظ</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${toastMessage ? `<div class="toast">${toastMessage}</div>` : ''}
+  `;
+  tickClock();
+
+  if(focusId){
+    const el = document.getElementById(focusId);
+    if(el){
+      el.focus();
+      if(selStart !== null && el.setSelectionRange){
+        try{ el.setSelectionRange(selStart, selEnd); }catch(e){}
+      }
+    }
+  }
+}
+
+function tickClock(){
+  const el = document.getElementById('liveClock');
+  if(!el) return;
+  el.textContent = fmtTime(new Date());
+}
+setInterval(()=>{ tickClock(); }, 1000);
+// re-fetch every 60s from shared storage to stay in sync with the whole team
+setInterval(()=>{ loadAttendanceForCurrentView(); }, 60000);
+
+loadAll();
+</script>
+</body>
+</html>
