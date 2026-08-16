@@ -339,7 +339,11 @@ async function exportMonth(){
       let dayData = {};
       try{
         const res = await remoteStorage.get(key, true);
-        dayData = res ? JSON.parse(res.value) : {};
+        if(res && res.value){
+          dayData = (typeof res.value === 'string') ? JSON.parse(res.value) : res.value;
+        } else {
+          dayData = {};
+        }
       }catch(e){ dayData = {}; }
       const sortedNames = [...employees].sort((a,b)=>a.localeCompare(b,'ar'));
       for(const name of sortedNames){
@@ -374,7 +378,11 @@ async function exportMonth(){
 async function loadAttendanceForCurrentView(){
   try{
     const att = await remoteStorage.get(attendanceKey(), true);
-    attendance = att ? JSON.parse(att.value) : {};
+    if(att && att.value){
+      attendance = (typeof att.value === 'string') ? JSON.parse(att.value) : att.value;
+    } else {
+      attendance = {};
+    }
   }catch(e){ attendance = {}; }
   render();
 }
@@ -408,12 +416,20 @@ async function loadAll(){
 
   try{
     const pins = await remoteStorage.get(STORAGE_PINS, true);
-    employeePins = pins ? JSON.parse(pins.value) : {};
+    if(pins && pins.value){
+      employeePins = (typeof pins.value === 'string') ? JSON.parse(pins.value) : pins.value;
+    } else {
+      employeePins = {};
+    }
   }catch(e){ employeePins = {}; }
 
   try{
     const att = await remoteStorage.get(attendanceKey(), true);
-    attendance = att ? JSON.parse(att.value) : {};
+    if(att && att.value){
+      attendance = (typeof att.value === 'string') ? JSON.parse(att.value) : att.value;
+    } else {
+      attendance = {};
+    }
   }catch(e){ attendance = {}; }
 
   render();
@@ -427,13 +443,41 @@ async function saveCutoff(){
   try{ await remoteStorage.set(STORAGE_CUTOFF, JSON.stringify(cutoffTime), true); }
   catch(e){ console.error('save cutoff failed', e); }
 }
-async function savePins(){
-  try{ await remoteStorage.set(STORAGE_PINS, JSON.stringify(employeePins), true); }
-  catch(e){ console.error('save pins failed', e); }
+async function savePinField(name, pin){
+  try{
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(STORAGE_PINS)}/${encodeURIComponent(name)}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pin)
+    });
+  }catch(e){
+    console.error('save pin field failed', e);
+    showToast('⚠️ حصل خطأ في حفظ الرقم السري، تأكد من الإنترنت وجرّب تاني');
+  }
 }
-async function saveAttendance(){
-  try{ await remoteStorage.set(attendanceKey(), JSON.stringify(attendance), true); }
-  catch(e){ console.error('save attendance failed', e); }
+async function deletePinField(name){
+  try{
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(STORAGE_PINS)}/${encodeURIComponent(name)}.json`, { method: 'DELETE' });
+  }catch(e){ console.error('delete pin field failed', e); }
+}
+async function saveAttendanceField(name, rec){
+  // writes ONLY this one employee's own record — never touches anyone else's,
+  // so two people saving at the same time can never wipe each other out.
+  try{
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(attendanceKey())}/${encodeURIComponent(name)}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rec)
+    });
+  }catch(e){
+    console.error('save attendance field failed', e);
+    showToast('⚠️ حصل خطأ في حفظ التسجيل، تأكد من الإنترنت وجرّب تاني');
+  }
+}
+async function deleteAttendanceField(name){
+  try{
+    await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(attendanceKey())}/${encodeURIComponent(name)}.json`, { method: 'DELETE' });
+  }catch(e){ console.error('delete attendance field failed', e); }
 }
 
 function isLate(name){
@@ -456,7 +500,7 @@ async function markIn(name){
   attendance[name] = attendance[name] || {};
   attendance[name].in = now.toISOString();
   render();
-  await saveAttendance();
+  await saveAttendanceField(name, attendance[name]);
 }
 
 function askConfirmIn(name){
@@ -489,18 +533,18 @@ async function proceedConfirmIn(){
     }
   } else {
     employeePins[name] = pin;
-    await savePins();
+    savePinField(name, pin); // مش بننتظرها — التخزين بيحصل في الخلفية من غير ما نأخّر الشاشة
   }
   confirmingInName = null;
   confirmErrorIn = null;
-  await markIn(name);
+  markIn(name); // render() بتحصل جوّاها فورًا؛ الحفظ الفعلي بيكمل في الخلفية
 }
 async function markOut(name){
   const now = new Date();
   attendance[name] = attendance[name] || {};
   attendance[name].out = now.toISOString();
   render();
-  await saveAttendance();
+  await saveAttendanceField(name, attendance[name]);
 }
 
 function askConfirmOut(name){
@@ -533,11 +577,11 @@ async function proceedConfirmOut(){
     }
   } else {
     employeePins[name] = pin;
-    await savePins();
+    savePinField(name, pin); // مش بننتظرها — التخزين بيحصل في الخلفية من غير ما نأخّر الشاشة
   }
   confirmingName = null;
   confirmErrorOut = null;
-  await markOut(name);
+  markOut(name); // render() بتحصل جوّاها فورًا؛ الحفظ الفعلي بيكمل في الخلفية
 }
 
 async function addEmployees(){
@@ -560,15 +604,15 @@ async function removeEmployee(name){
   delete employeePins[name];
   render();
   await saveEmployees();
-  await saveAttendance();
-  await savePins();
+  await deleteAttendanceField(name);
+  await deletePinField(name);
 }
 
 async function resetPin(name){
   if(!confirm(`متأكد إنك عايز تصفّر الرقم السري بتاع ${name}؟ هيحتاج يحدد رقم جديد أول ما يبصم.`)) return;
   delete employeePins[name];
   render();
-  await savePins();
+  await deletePinField(name);
 }
 
 async function updateCutoff(val){
@@ -619,7 +663,7 @@ async function submitAdminLogin(){
   } else {
     // this admin never confirmed attendance before — set this as their PIN now
     employeePins[nameSel] = pin;
-    await savePins();
+    savePinField(nameSel, pin);
   }
   adminAuthenticated = true;
   adminName = nameSel;
@@ -673,7 +717,7 @@ async function submitChangePin(){
     return;
   }
   employeePins[nameSel] = newPin;
-  await savePins();
+  savePinField(nameSel, newPin);
   showChangePin = false;
   changePinError = null;
   render();
@@ -921,8 +965,13 @@ function tickClock(){
   el.textContent = fmtTime(new Date());
 }
 setInterval(()=>{ tickClock(); }, 1000);
-// re-fetch every 60s from shared storage to stay in sync with the whole team
-setInterval(()=>{ loadAttendanceForCurrentView(); }, 60000);
+// re-fetch every 60s from shared storage to stay in sync with the whole team —
+// بس مش وإحنا فاتحين أي نافذة تأكيد أو تسجيل دخول، عشان محدش يخسر اللي كاتبه
+setInterval(()=>{
+  if(!confirmingName && !confirmingInName && !showAdminLogin && !showChangePin){
+    loadAttendanceForCurrentView();
+  }
+}, 60000);
 
 loadAll();
 </script>
