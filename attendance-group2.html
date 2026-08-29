@@ -125,6 +125,10 @@
   .modal-actions .cancel-btn{background:transparent; border:1px solid var(--card-border); color:var(--text);}
   .modal-actions button:active{transform:scale(0.96);}
 
+  .friday-banner{
+    background: var(--amber-soft); border:1px solid var(--amber); border-radius:10px;
+    padding:10px 14px; margin-bottom:14px; font-size:13px; text-align:center; color:var(--amber); font-weight:700;
+  }
   .toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--green); color:#0d2018;
     padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; z-index:60; box-shadow:0 4px 16px rgba(0,0,0,0.3);
@@ -146,6 +150,7 @@
 const STORAGE_EMPLOYEES = 'g2_attendance_employees';
 const STORAGE_CUTOFF = 'g2_attendance_cutoff';
 const STORAGE_PINS = 'g2_attendance_pins';
+const STORAGE_ROTATION_ANCHOR = 'g2_rotation_anchor';
 
 // ============================================================
 // REMOTE STORAGE — بديل عن window.storage، بيتكلم مباشرة مع
@@ -164,7 +169,6 @@ const remoteStorage = {
   async set(key, value, shared){
     await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(key)}.json`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(value)
     });
     return { key, value, shared: true };
@@ -188,6 +192,7 @@ const ADMIN_NAMES = [
   "نور الحسين وفاء السيد عبد الرحمن",
   "امير خليفة محمود محمد"
 ];
+
 
 const DEFAULT_EMPLOYEES = [
   "نور الحسين وفاء السيد عبد الرحمن",
@@ -225,6 +230,8 @@ const DEFAULT_EMPLOYEES = [
 ];
 
 let employees = [];
+let rotationAnchor = null; // أول جمعة اتفعّل فيها نظام التبديل — بتتحدد أوتوماتيك
+let anchorFridayAttendance = {}; // بيانات جمعة البداية (لو كانت يوم فات) — بنستخدمها كمرجع
 let cutoffTime = '09:30';
 let attendance = {};
 let employeePins = {};
@@ -238,6 +245,7 @@ let viewedDate = todayKey();
 let toastMessage = null;
 let exportMonthValue = todayKey().slice(0,7);
 let exporting = false;
+let exportingFriday = false;
 
 // admin session (in-memory only — resets if the page is reloaded)
 let adminAuthenticated = false;
@@ -253,7 +261,9 @@ function todayKey(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-function attendanceKey(){ return 'g2_attendance_day_' + viewedDate; }
+const ATTENDANCE_DAY_PREFIX = 'g2_attendance_day_';
+function attendanceKey(){ return ATTENDANCE_DAY_PREFIX + viewedDate; }
+function attendanceKeyForDate(dateStr){ return ATTENDANCE_DAY_PREFIX + dateStr; }
 function isViewingToday(){ return viewedDate === todayKey(); }
 
 function fmtDateArabic(){
@@ -311,6 +321,68 @@ function monthLabelArabic(monthStr){
   const [y,m] = monthStr.split('-').map(Number);
   const dt = new Date(y, m-1, 1);
   return dt.toLocaleDateString('ar-EG', { year:'numeric', month:'long' });
+}
+
+
+function getNextOrTodayFridayDate(){
+  if(isFriday()) return todayKey();
+  const d = new Date();
+  const daysUntilFriday = (5 - d.getDay() + 7) % 7 || 7;
+  const target = new Date(d);
+  target.setDate(d.getDate() + daysUntilFriday);
+  const y = target.getFullYear();
+  const m = String(target.getMonth()+1).padStart(2,'0');
+  const dd = String(target.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function fmtDateArabicForDateStr(dateStr){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  return dt.toLocaleDateString('ar-EG', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+
+async function exportFridaySchedule(){
+  if(exportingFriday) return;
+  const targetDate = getNextOrTodayFridayDate();
+
+  if(!rotationAnchor || targetDate === rotationAnchor){
+    showToast('لسه معندناش نقطة بداية ثابتة للتناوب — أول جمعة هتستخدم فيها الأداة هي اللي هتحدد الجدول (مفيش تقييد فيها)، وبعدها تقدر تصدّري الجدول عادي');
+    return;
+  }
+
+  exportingFriday = true;
+  render();
+  try{
+    const sortedNames = [...employees].sort((a,b)=>a.localeCompare(b,'ar'));
+    const group3 = [];
+    const group8 = [];
+    sortedNames.forEach(name=>{
+      const g = getCheckoutGroupFor(name, targetDate);
+      if(g === '3pm') group3.push(name); else group8.push(name);
+    });
+
+    const rows = [
+      ['جدول انصراف يوم الجمعة: ' + fmtDateArabicForDateStr(targetDate)],
+      [],
+      ['هيمشوا الساعة 3:00 عصرًا', 'هيمشوا الساعة 8:00 مساءً']
+    ];
+    const maxLen = Math.max(group3.length, group8.length);
+    for(let i=0;i<maxLen;i++){
+      rows.push([group3[i] || '', group8[i] || '']);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:32},{wch:32}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'جدول الجمعة');
+    XLSX.writeFile(wb, `جدول-انصراف-الجمعة-${targetDate}.xlsx`);
+    showToast('تم تحميل جدول الجمعة ✅');
+  }catch(e){
+    console.error('export friday schedule failed', e);
+    showToast('حصل خطأ أثناء التصدير، جرب تاني');
+  }
+  exportingFriday = false;
+  render();
 }
 
 function updateExportMonth(val){
@@ -374,7 +446,6 @@ async function exportMonth(){
   render();
 }
 
-
 async function loadAttendanceForCurrentView(){
   try{
     const att = await remoteStorage.get(attendanceKey(), true);
@@ -415,6 +486,36 @@ async function loadAll(){
   }catch(e){ cutoffTime = '09:30'; }
 
   try{
+    const anchor = await remoteStorage.get(STORAGE_ROTATION_ANCHOR, true);
+    rotationAnchor = (anchor && anchor.value) ? (typeof anchor.value === 'string' ? JSON.parse(anchor.value) : anchor.value) : null;
+  }catch(e){ rotationAnchor = null; }
+
+  // أول مرة حد يفتح الأداة يوم جمعة ومفيش نقطة بداية متسجلة للتبديل، سجّلها دلوقتي —
+  // من هنا هتحسب الأداة كل حاجة أوتوماتيك من غير ما حد يحتاج يحدد تاريخ يدويًا.
+  if(!rotationAnchor && isFriday()){
+    rotationAnchor = todayKey();
+    try{ await remoteStorage.set(STORAGE_ROTATION_ANCHOR, JSON.stringify(rotationAnchor), true); }
+    catch(e){ console.error('save rotation anchor failed', e); }
+  }
+
+  // لو جمعة البداية يوم فات (مش النهاردة)، هات تسجيلات الانصراف بتاعتها مرة واحدة
+  // بس — هي دي المرجع اللي بنحدد بيه مين كان في مجموعة الـ3 ومين في مجموعة الـ8.
+  // لو جمعة البداية هي النهاردة نفسها، مفيش داعي نجيبها لوحدها — هنستخدم بيانات
+  // اليوم الحية (attendance) مباشرة لأنها نفس الحاجة وبتتحدث أوتوماتيك.
+  try{
+    if(rotationAnchor && rotationAnchor !== todayKey()){
+      const anchorRes = await remoteStorage.get(attendanceKeyForDate(rotationAnchor), true);
+      if(anchorRes && anchorRes.value){
+        anchorFridayAttendance = (typeof anchorRes.value === 'string') ? JSON.parse(anchorRes.value) : anchorRes.value;
+      } else {
+        anchorFridayAttendance = {};
+      }
+    } else {
+      anchorFridayAttendance = {};
+    }
+  }catch(e){ anchorFridayAttendance = {}; }
+
+  try{
     const pins = await remoteStorage.get(STORAGE_PINS, true);
     if(pins && pins.value){
       employeePins = (typeof pins.value === 'string') ? JSON.parse(pins.value) : pins.value;
@@ -447,7 +548,6 @@ async function savePinField(name, pin){
   try{
     await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(STORAGE_PINS)}/${encodeURIComponent(name)}.json`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(pin)
     });
   }catch(e){
@@ -466,7 +566,6 @@ async function saveAttendanceField(name, rec){
   try{
     await fetch(`${DATABASE_URL}/storage/${encodeURIComponent(attendanceKey())}/${encodeURIComponent(name)}.json`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(rec)
     });
   }catch(e){
@@ -495,6 +594,75 @@ function isAbsentPastDay(name){
   return !(rec && rec.in);
 }
 
+// ============================================================
+// جدول الجمعة: الحضور 8:00-9:30 صباحًا، والانصراف الساعة 3 أو 8 بس،
+// والتسجيل كله مقفول في غير يوم الجمعة.
+// ============================================================
+function isFriday(){
+  return new Date().getDay() === 5; // 0=Sunday ... 5=Friday
+}
+function isWithinCheckinWindow(){
+  if(!isFriday()) return false;
+  const now = new Date();
+  const start = new Date(now); start.setHours(8,0,0,0);
+  const end = new Date(now); end.setHours(9,30,0,0);
+  return now >= start && now <= end;
+}
+// --- تناوب مواعيد الانصراف: بيتحدد أوتوماتيك بناءً على اللي حصل فعليًا يوم
+// جمعة البداية (أول جمعة اتسجل فيها انصراف على الأداة) — مفيش تقييد خالص
+// في جمعة البداية دي، كل واحد يسجل وقت ما يحب، والأداة برصد اللي حصل.
+// اللي انصرف 3 وقتها، هيبقى دوره يمشي 8، والعكس. التبديل ده بيفضل ثابت
+// جمعتين ورا بعض، وبعدين بينعكس، وهكذا للأبد من غير أي تدخل يدوي.
+function getBaseGroup(name){
+  // في جمعة البداية نفسها، البيانات الحية (attendance) هي المرجع لسه بتتسجل
+  const source = (rotationAnchor === todayKey()) ? attendance : anchorFridayAttendance;
+  const rec = source[name];
+  if(rec && rec.out){
+    const hour = new Date(rec.out).getHours();
+    return hour < 18 ? '3pm' : '8pm';
+  }
+  // محدش عنده تسجيل ليه في جمعة البداية (غايب وقتها، أو اتضاف بعدين) —
+  // نديله توزيع افتراضي حسب ترتيبه لحد ما يسجل انصراف فعلي يوم جمعة
+  const idx = employees.indexOf(name);
+  const half = Math.ceil(employees.length / 2);
+  return (idx !== -1 && idx < half) ? '3pm' : '8pm';
+}
+function getCycleIndexForDate(dateStr){
+  if(!rotationAnchor) return 0;
+  const [ay,am,ad] = rotationAnchor.split('-').map(Number);
+  const anchor = new Date(ay, am-1, ad);
+  const [dy,dm,dd] = dateStr.split('-').map(Number);
+  const d = new Date(dy, dm-1, dd);
+  const diffWeeks = Math.round((d - anchor) / (7*86400000));
+  return Math.floor(diffWeeks / 2); // ثابت لمدة جمعتين، وبعدين بيتقدم للدورة الجاية
+}
+function getCheckoutGroupFor(name, dateStr){
+  const base = getBaseGroup(name);
+  const cycleIndex = getCycleIndexForDate(dateStr);
+  const flipped = (((cycleIndex % 2) + 2) % 2) === 1; // معالجة الأرقام السالبة بأمان
+  if(!flipped) return base;
+  return base === '3pm' ? '8pm' : '3pm';
+}
+function isWithinCheckoutWindowFor(name){
+  if(!isFriday()) return false;
+  const now = new Date();
+  const w1s = new Date(now); w1s.setHours(15,0,0,0);
+  const w1e = new Date(now); w1e.setHours(15,30,0,0);
+  const w2s = new Date(now); w2s.setHours(20,0,0,0);
+  const w2e = new Date(now); w2e.setHours(20,30,0,0);
+  const inWindow1 = now >= w1s && now <= w1e;
+  const inWindow2 = now >= w2s && now <= w2e;
+
+  // جمعة البداية نفسها: مفيش تقييد، أي حد يسجل في أي الوقتين — عشان الأداة
+  // ترصد اللي بيحصل فعليًا وتبني عليه التناوب لكل الجمعات الجاية
+  if(!rotationAnchor || rotationAnchor === todayKey()){
+    return inWindow1 || inWindow2;
+  }
+
+  const group = getCheckoutGroupFor(name, todayKey());
+  return group === '3pm' ? inWindow1 : inWindow2;
+}
+
 async function markIn(name){
   const now = new Date();
   attendance[name] = attendance[name] || {};
@@ -516,6 +684,11 @@ function cancelConfirmIn(){
 }
 async function proceedConfirmIn(){
   const name = confirmingInName;
+  if(!isWithinCheckinWindow()){
+    confirmErrorIn = 'وقت الحضور خلص، مقدرش أسجّله دلوقتي';
+    render();
+    return;
+  }
   const el = document.getElementById('pinInputIn');
   const pin = el ? el.value.trim() : '';
   if(!/^\d{4}$/.test(pin)){
@@ -560,6 +733,11 @@ function cancelConfirmOut(){
 }
 async function proceedConfirmOut(){
   const name = confirmingName;
+  if(!isWithinCheckoutWindowFor(name)){
+    confirmErrorOut = 'وقت الانصراف خلص، مقدرش أسجّله دلوقتي';
+    render();
+    return;
+  }
   const el = document.getElementById('pinInputOut');
   const pin = el ? el.value.trim() : '';
   if(!/^\d{4}$/.test(pin)){
@@ -661,7 +839,7 @@ async function submitAdminLogin(){
       return;
     }
   } else {
-    // this admin never confirmed attendance before — set this as their PIN now
+    // this admin never logged in before — set this as their PIN now
     employeePins[nameSel] = pin;
     savePinField(nameSel, pin);
   }
@@ -778,6 +956,9 @@ function render(){
       ${!isViewingToday() ? `<button class="icon-btn" onclick="backToToday()">◀ رجوع لليوم</button>` : ''}
     </div>
 
+    ${(!isFriday() && isViewingToday()) ? `
+    <div class="friday-banner">📅 التسجيل (حضور وانصراف) متاح يوم الجمعة بس — الحضور 8:00-9:30 ص، والانصراف 3:00 أو 8:00 م.</div>` : ''}
+
     <div class="stats">
       <div class="stat in"><div class="num">${inCount}/${employees.length}</div><div class="lbl">حضروا</div></div>
       <div class="stat pending"><div class="num">${pendingCount}</div><div class="lbl">لسه ماحضروش</div></div>
@@ -816,8 +997,9 @@ function render(){
       <div class="export-row">
         <input type="month" value="${exportMonthValue}" max="${todayKey().slice(0,7)}" onchange="updateExportMonth(this.value)">
         <button class="primary-btn" onclick="exportMonth()" ${exporting ? 'disabled':''}>${exporting ? 'جارِ التصدير...' : 'تحميل Excel لشهر ' + monthLabelArabic(exportMonthValue)}</button>
+        <button class="primary-btn" onclick="exportFridaySchedule()" ${exportingFriday ? 'disabled':''}>${exportingFriday ? 'جارِ التصدير...' : '📋 جدول انصراف الجمعة'}</button>
       </div>
-      <p class="hint">هيطلع ملف فيه كل يوم فيه بيانات في الشهر ده، بأسماء المهندسين ومواعيد الحضور والانصراف وحالة كل يوم.</p>
+      <p class="hint">هيطلع ملف فيه كل يوم فيه بيانات في الشهر ده، بأسماء المهندسين ومواعيد الحضور والانصراف وحالة كل يوم.<br>وزرار "جدول انصراف الجمعة" بيطلع ملف بأسماء اللي هيمشوا 3 واللي هيمشوا 8 يوم الجمعة الجاية (أو النهاردة لو النهاردة جمعة).</p>
       ${employees.length ? `
       <h3 style="margin-top:16px;">الأسماء الحالية (${employees.length})</h3>
       <div style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-top:8px;">
@@ -841,21 +1023,39 @@ function render(){
         const late = isLate(name);
         const absentPast = isAbsentPastDay(name);
         const readOnly = !isViewingToday();
+        const myGroup = (isFriday() && isViewingToday() && rotationAnchor && rotationAnchor !== todayKey()) ? getCheckoutGroupFor(name, todayKey()) : null;
+        const myGroupLabel = myGroup === '3pm' ? '3:00 عصرًا' : (myGroup === '8pm' ? '8:00 مساءً' : '');
         return `
         <div class="card ${late || absentPast ? 'late':''}">
           <div class="name-block">
             <div class="name">${name}</div>
             ${late ? '<div class="late-tag">متأخر عن موعد الحضور</div>' : ''}
             ${absentPast ? '<div class="late-tag">لم يسجل حضور هذا اليوم</div>' : ''}
+            ${(myGroup && !rec.out) ? `<div style="font-size:10px; color:var(--muted); margin-top:2px;">🕒 انصرافك النهاردة: ${myGroupLabel}</div>` : ''}
           </div>
           <div class="actions">
             ${rec.in
               ? `<div class="stamp in-stamp">حضر ✓<br>${fmtTime(new Date(rec.in))}</div>`
-              : (readOnly ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>` : `<button class="action-btn in-btn" onclick="askConfirmIn('${name.replace(/'/g,"\\'")}')">تسجيل حضور</button>`)
+              : (readOnly
+                  ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>`
+                  : (isWithinCheckinWindow()
+                      ? `<button class="action-btn in-btn" onclick="askConfirmIn('${name.replace(/'/g,"\\'")}')">تسجيل حضور</button>`
+                      : `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent; font-size:10px;">${isFriday() ? 'الحضور من 8 لـ9:30 ص' : 'التسجيل يوم الجمعة بس'}</div>`
+                    )
+                )
             }
             ${rec.out
               ? `<div class="stamp out-stamp">انصرف ✓<br>${fmtTime(new Date(rec.out))}</div>`
-              : (readOnly ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>` : `<button class="action-btn out-btn" onclick="askConfirmOut('${name.replace(/'/g,"\\'")}')" ${!rec.in ? 'disabled':''}>تسجيل انصراف</button>`)
+              : (readOnly
+                  ? `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent;">لم يسجل</div>`
+                  : (!rec.in
+                      ? `<button class="action-btn out-btn" disabled>تسجيل انصراف</button>`
+                      : (isWithinCheckoutWindowFor(name)
+                          ? `<button class="action-btn out-btn" onclick="askConfirmOut('${name.replace(/'/g,"\\'")}')">تسجيل انصراف</button>`
+                          : `<div class="stamp" style="color:var(--muted); border-color:var(--card-border); background:transparent; font-size:10px;">${isFriday() ? (myGroup ? ('انصرافك ' + myGroupLabel) : 'الانصراف 3 أو 8 بس') : 'التسجيل يوم الجمعة بس'}</div>`
+                        )
+                    )
+                )
             }
           </div>
         </div>`;
